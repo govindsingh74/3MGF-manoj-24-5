@@ -41,6 +41,7 @@ const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex justify-between items-center">
           <Link to="/" className="flex items-center space-x-2">
+            <img src="/logo design.png" alt="Logo" className="h-8 w-8 mr-2" />
             <div className="text-2xl font-display font-bold">
               <span className="text-accent-purple">M</span>
               <span className="text-white">G</span>

@@ -7,11 +7,6 @@ const Hero: React.FC = () => {
   const { openModal } = useWallet();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const networkRef = useRef<{
-    nodes: { x: number; y: number; connections: number[]; active: boolean }[];
-    animationFrame: number;
-    isAnimating: boolean;
-  }>({ nodes: [], animationFrame: 0, isAnimating: false });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -27,103 +22,66 @@ const Hero: React.FC = () => {
     updateSize();
     window.addEventListener('resize', updateSize);
 
-    // G30 country positions (normalized coordinates)
-    const initNodes = () => {
-      const nodes = [
-        { x: 0.2, y: 0.3, connections: [1, 4, 7], active: false },    // USA
-        { x: 0.5, y: 0.2, connections: [0, 2, 5], active: false },    // UK
-        { x: 0.6, y: 0.25, connections: [1, 3, 6], active: false },   // Germany
-        { x: 0.8, y: 0.3, connections: [2, 5, 8], active: false },    // Japan
-        { x: 0.3, y: 0.4, connections: [0, 5, 9], active: false },    // Canada
-        { x: 0.5, y: 0.4, connections: [1, 3, 4], active: false },    // France
-        { x: 0.6, y: 0.45, connections: [2, 7, 8], active: false },   // Italy
-        { x: 0.4, y: 0.6, connections: [0, 6, 9], active: false },    // Brazil
-        { x: 0.7, y: 0.5, connections: [3, 6, 9], active: false },    // China
-        { x: 0.5, y: 0.7, connections: [4, 7, 8], active: false }     // Australia
-      ];
+    const colors = ['#14F195', '#9333EA', '#F59E0B', '#3B82F6', '#EF4444', '#10B981'];
+    const particles: {
+      x: number;
+      y: number;
+      radius: number;
+      dx: number;
+      dy: number;
+      color: string;
+    }[] = [];
 
-      networkRef.current.nodes = nodes.map(node => ({
-        x: node.x * canvas.width,
-        y: node.y * canvas.height,
-        connections: node.connections,
-        active: false
-      }));
+    const createParticles = () => {
+      particles.length = 0;
+      for (let i = 0; i < 20; i++) {
+        const radius = 8 + Math.random() * 6;
+        const x = Math.random() * (canvas.width - radius * 2) + radius;
+        const y = Math.random() * (canvas.height - radius * 2) + radius;
+        const dx = (Math.random() - 0.5) * 2;
+        const dy = (Math.random() - 0.5) * 2;
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        particles.push({ x, y, radius, dx, dy, color });
+      }
     };
 
-    const startChainReaction = () => {
-      if (networkRef.current.isAnimating) return;
-      
-      networkRef.current.isAnimating = true;
-      networkRef.current.nodes[0].active = true;
+    const distance = (x1: number, y1: number, x2: number, y2: number) =>
+      Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
 
-      const animate = (currentNode: number, depth: number = 0) => {
-        if (depth > 10) {
-          networkRef.current.isAnimating = false;
-          return;
-        }
-
-        setTimeout(() => {
-          const node = networkRef.current.nodes[currentNode];
-          node.connections.forEach(targetIndex => {
-            networkRef.current.nodes[targetIndex].active = true;
-            animate(targetIndex, depth + 1);
-          });
-
-          setTimeout(() => {
-            node.active = false;
-          }, 1000);
-        }, 500);
-      };
-
-      animate(0);
-    };
-
-    const drawNetwork = () => {
-      if (!ctx || !canvas) return;
-
+    const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw connections
-      networkRef.current.nodes.forEach((node, i) => {
-        if (node.active) {
-          node.connections.forEach(j => {
-            const target = networkRef.current.nodes[j];
-            ctx.beginPath();
-            ctx.moveTo(node.x, node.y);
-            ctx.lineTo(target.x, target.y);
-            ctx.strokeStyle = `rgba(20, 241, 149, ${node.active ? 0.8 : 0.1})`;
-            ctx.lineWidth = node.active ? 2 : 1;
-            ctx.stroke();
-          });
-        }
-      });
+      particles.forEach((p, i) => {
+        p.x += p.dx;
+        p.y += p.dy;
 
-      // Draw nodes
-      networkRef.current.nodes.forEach(node => {
+        if (p.x + p.radius > canvas.width || p.x - p.radius < 0) p.dx *= -1;
+        if (p.y + p.radius > canvas.height || p.y - p.radius < 0) p.dy *= -1;
+
+        for (let j = i + 1; j < particles.length; j++) {
+          const other = particles[j];
+          const d = distance(p.x, p.y, other.x, other.y);
+          if (d < p.radius + other.radius) {
+            const newColor = colors[Math.floor(Math.random() * colors.length)];
+            p.color = newColor;
+            other.color = newColor;
+          }
+        }
+
         ctx.beginPath();
-        ctx.arc(node.x, node.y, node.active ? 5 : 3, 0, Math.PI * 2);
-        ctx.fillStyle = node.active ? 'rgba(20, 241, 149, 0.8)' : 'rgba(147, 51, 234, 0.3)';
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
         ctx.fill();
       });
 
-      networkRef.current.animationFrame = requestAnimationFrame(drawNetwork);
+      requestAnimationFrame(animate);
     };
 
-    initNodes();
-    drawNetwork();
-
-    // Add click handler to MGF logo
-    const logoElement = document.querySelector('.mgf-logo');
-    if (logoElement) {
-      logoElement.addEventListener('click', startChainReaction);
-    }
+    createParticles();
+    animate();
 
     return () => {
       window.removeEventListener('resize', updateSize);
-      cancelAnimationFrame(networkRef.current.animationFrame);
-      if (logoElement) {
-        logoElement.removeEventListener('click', startChainReaction);
-      }
     };
   }, []);
 
@@ -131,9 +89,9 @@ const Hero: React.FC = () => {
     <section className="min-h-screen flex items-center justify-center pt-20 pb-10 px-4 relative overflow-hidden">
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 z-0 opacity-40"
+        className="absolute inset-0 z-0 opacity-50"
       />
-      
+
       <div ref={containerRef} className="max-w-6xl w-full mx-auto grid md:grid-cols-2 gap-12 items-center z-10">
         <div className="text-center md:text-left">
           <div className="inline-block relative mb-2">
@@ -141,19 +99,19 @@ const Hero: React.FC = () => {
               Solana Memecoin
             </span>
           </div>
-          
+
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold font-display mb-4 glitch-text" data-text="MGF">
             <span className="text-accent-purple">M</span>t. <span className="text-accent-purple">G</span>ox <span className="text-accent-purple">F</span>unds
           </h1>
-          
+
           <p className="text-xl md:text-2xl mb-6 text-text-secondary">
             Reclaim the Memes of Mt. Gox!
           </p>
-          
+
           <p className="mb-8 text-text-secondary max-w-lg mx-auto md:mx-0">
             The legendary exchange hack reborn as a Solana memecoin. Join the revolution and become part of crypto history once again.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row justify-center md:justify-start gap-4">
             <button onClick={openModal} className="btn btn-primary">
               Connect Wallet
@@ -162,20 +120,20 @@ const Hero: React.FC = () => {
               Learn More <ArrowRight size={16} />
             </a>
           </div>
-          
+
           <div className="mt-10 grid grid-cols-3 gap-6">
             <StatsCounter label="Supply" value={420000000} suffix="M" />
             <StatsCounter label="Holders" value={8721} />
             <StatsCounter label="Burned" value={69420000} suffix="M" />
           </div>
         </div>
-        
+
         <div className="hidden md:block">
           <div className="relative w-full h-full max-h-[500px] flex items-center justify-center">
             <div className="absolute w-64 h-64 bg-accent-purple/20 rounded-full filter blur-3xl animate-pulse-slow"></div>
             <div className="absolute w-48 h-48 bg-accent-green/20 rounded-full filter blur-3xl animate-pulse-slow" style={{ animationDelay: '-1.5s' }}></div>
-            
-            <div className="relative z-10 w-72 h-72 holographic rounded-full overflow-hidden neon-border flex items-center justify-center animate-float cursor-pointer mgf-logo">
+
+            <div className="relative z-10 w-72 h-72 holographic rounded-full overflow-hidden neon-border flex items-center justify-center animate-float cursor-pointer">
               <div className="text-7xl font-display font-bold">
                 <span className="text-accent-purple">M</span>
                 <span className="text-accent-green">G</span>
