@@ -18,21 +18,21 @@ const NftVault: React.FC = () => {
     {
       id: 1,
       name: 'Lost Bitcoin',
-      image: 'https://qpvmurtykrlpdgsxuinf.supabase.co/storage/v1/object/sign/nft/May%2027,%202025,%2008_38_29%20AM.png?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0b3JhZ2UtdXJsLXNpZ25pbmcta2V5Xzc0OGY1YjQ0LTAzMWYtNGRiMi1hNDgyLTE5YjY4MWM4MmQwMCJ9.eyJ1cmwiOiJuZnQvTWF5IDI3LCAyMDI1LCAwOF8zOF8yOSBBTS5wbmciLCJpYXQiOjE3NDgzNTM5NDEsImV4cCI6MTc3OTg4OTk0MX0.hmF8Qku1fNGJrtMeSowxm0YzfLwKwpm1xWKjRhj19sE',
+      image: 'https://qpvmurtykrlpdgsxuinf.supabase.co/storage/v1/object/sign/nft/May%2027,%202025,%2008_38_29%20AM.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNDJlNzZkOC04OGZiLTRjMGUtODI1OC0wODE5MGY4MTY3MTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJuZnQvTWF5IDI3LCAyMDI1LCAwOF8zOF8yOSBBTS5wbmciLCJpYXQiOjE3NDk5OTc5MzMsImV4cCI6MTc4MTUzMzkzM30.0XomYdS3dyCoaerNhmXWOTndB1_hmSyGoAYO8b6BI34',
       description: 'A commemorative NFT symbolizing the lost bitcoins from the Mt. Gox hack.',
       rarity: 'Common'
     },
     {
       id: 2,
       name: 'Vault Breach',
-      image: 'https://qpvmurtykrlpdgsxuinf.supabase.co/storage/v1/object/sign/nft/May%2027,%202025,%2008_45_12%20AM.png?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0b3JhZ2UtdXJsLXNpZ25pbmcta2V5Xzc0OGY1YjQ0LTAzMWYtNGRiMi1hNDgyLTE5YjY4MWM4MmQwMCJ9.eyJ1cmwiOiJuZnQvTWF5IDI3LCAyMDI1LCAwOF80NV8xMiBBTS5wbmciLCJpYXQiOjE3NDgzNTM5NjUsImV4cCI6MTc3OTg4OTk2NX0.ExmtrZi6Uw3sTMZuu6PozZ4RPneFPWjgypxzLHuk9zs',
+      image: 'https://qpvmurtykrlpdgsxuinf.supabase.co/storage/v1/object/sign/nft/May%2027,%202025,%2008_45_12%20AM.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNDJlNzZkOC04OGZiLTRjMGUtODI1OC0wODE5MGY4MTY3MTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJuZnQvTWF5IDI3LCAyMDI1LCAwOF80NV8xMiBBTS5wbmciLCJpYXQiOjE3NDk5OTc5MTIsImV4cCI6MTc4MTUzMzkxMn0.nYjuCH6xWxtbgyTTgZckQZuPS_40hsDjCb3oqVgPWjg',
       description: 'Depicts the moment hackers breached the Mt. Gox security systems.',
       rarity: 'Rare'
     },
     {
       id: 3,
       name: 'Rebirth Phoenix',
-      image: 'https://qpvmurtykrlpdgsxuinf.supabase.co/storage/v1/object/sign/nft/ChatGPT%20Image%20May%2027,%202025,%2008_51_35%20AM.png?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6InN0b3JhZ2UtdXJsLXNpZ25pbmcta2V5Xzc0OGY1YjQ0LTAzMWYtNGRiMi1hNDgyLTE5YjY4MWM4MmQwMCJ9.eyJ1cmwiOiJuZnQvQ2hhdEdQVCBJbWFnZSBNYXkgMjcsIDIwMjUsIDA4XzUxXzM1IEFNLnBuZyIsImlhdCI6MTc0ODM1Mzk5MSwiZXhwIjoxNzc5ODg5OTkxfQ.rmBXFeyUJgUeEbmK4IBt_FMnoWVRac4zU4xUYimIr2U',
+      image: 'https://qpvmurtykrlpdgsxuinf.supabase.co/storage/v1/object/sign/nft/ChatGPT%20Image%20May%2027,%202025,%2008_51_35%20AM.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNDJlNzZkOC04OGZiLTRjMGUtODI1OC0wODE5MGY4MTY3MTkiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJuZnQvQ2hhdEdQVCBJbWFnZSBNYXkgMjcsIDIwMjUsIDA4XzUxXzM1IEFNLnBuZyIsImlhdCI6MTc0OTk5Nzg0NiwiZXhwIjoxNzgxNTMzODQ2fQ.BY7_unxKusnXid8ZbpzhktkmRv8XzDf5HZjj_VjcYlU',
       description: 'A phoenix rising from the ashes, symbolizing MGF rebirth from Mt. Gox downfall.',
       rarity: 'Legendary'
     }

@@ -10,17 +10,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@solana/web3.js": "^1.91.1",
+    "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
     "@solana/wallet-adapter-react-ui": "^0.9.35",
-    "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-wallets": "^0.19.32",
+    "@solana/web3.js": "^1.91.1",
+    "@supabase/supabase-js": "^2.50.0",
     "lucide-react": "^0.344.0",
+    "qrcode.react": "^3.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.22.3",
-    "react-twitter-embed": "^4.0.4",
-    "qrcode.react": "^3.1.0"
+    "react-twitter-embed": "^4.0.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
