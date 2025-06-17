@@ -27,7 +27,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [publicKey, setPublicKey] = useState<PublicKey | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
   useEffect(() => {
     checkWalletConnection();
