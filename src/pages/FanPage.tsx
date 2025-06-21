@@ -253,40 +253,26 @@ const FanPage: React.FC = () => {
     }
   };
 
-  const ensureUserExists = async (walletAddress: string) => {
-    try {
-      const { data: existingUser, error: checkError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('wallet_address', walletAddress)
-        .maybeSingle();
+  const ensureUserExists = async (walletAddress: string): Promise<string> => {
+    const { data: user, error: selectError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('wallet_address', walletAddress)
+      .maybeSingle();
 
-      if (checkError) {
-        console.error('Error checking user existence:', checkError);
-        throw checkError;
-      }
+    if (selectError) throw new Error(`User select error: ${JSON.stringify(selectError)}`);
+    if (user) return user.id;
 
-      if (existingUser) {
-        return existingUser.id;
-      }
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert({ wallet_address: walletAddress })
+      .select('id')
+      .single();
 
-      const { data: newUser, error: insertError } = await supabase
-        .from('users')
-        .insert({ wallet_address: walletAddress })
-        .select('id')
-        .single();
-
-      if (insertError) {
-        console.error('Error creating user:', insertError);
-        throw insertError;
-      }
-
-      return newUser.id;
-    } catch (error) {
-      console.error('Error in ensureUserExists:', error);
-      throw error;
-    }
+    if (insertError) throw new Error(`User insert error: ${JSON.stringify(insertError)}`);
+    return newUser.id;
   };
+
 
   const handleSubmitPost = async () => {
     if (!connected || !publicKey) {
@@ -451,35 +437,43 @@ const FanPage: React.FC = () => {
     }
 
     try {
-      await ensureUserExists(publicKey.toString());
+  // Get the UUID of the user
+  const userId = await ensureUserExists(publicKey.toString());
 
-      const { data: existingReaction } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('post_id', postId)
-        .eq('user_id', publicKey.toString())
-        .eq('emoji_type', emojiType)
-        .maybeSingle();
+  // Check if this emoji already exists for this post and user
+  const { data: existingReaction, error: selectError } = await supabase
+    .from('likes')
+    .select('id')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .eq('emoji_type', emojiType)
+    .maybeSingle();
 
-      if (existingReaction) {
-        await supabase
-          .from('likes')
-          .delete()
-          .eq('id', existingReaction.id);
-      } else {
-        await supabase
-          .from('likes')
-          .insert({
-            post_id: postId,
-            user_id: publicKey.toString(),
-            emoji_type: emojiType
-          });
-      }
-      
-      await fetchPosts();
+  if (selectError) throw selectError;
+
+  if (existingReaction) {
+    // Remove the emoji if user clicked the same one again (toggle off)
+    await supabase
+      .from('likes')
+      .delete()
+      .eq('id', existingReaction.id);
+  } else {
+    // Insert a new emoji reaction
+    await supabase
+      .from('likes')
+      .insert({
+        post_id: postId,
+        user_id: userId,
+        emoji_type: emojiType
+      });
+  }
+
+  // Optimistically update local state or refetch
+  await fetchPosts();
     } catch (error) {
       console.error('Error toggling reaction:', error);
     }
+
   };
 
   const handleSubmitComment = async () => {
