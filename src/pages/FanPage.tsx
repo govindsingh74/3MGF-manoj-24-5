@@ -163,19 +163,23 @@ const FanPage: React.FC = () => {
 
             // Get user's reactions
             let userReactions: string[] = [];
-            if (connected && publicKey) {
-              const { data: userReactionsData, error: userReactionsError } = await supabase
-                .from('likes')
-                .select('emoji_type')
-                .eq('post_id', post.id)
-                .eq('user_id', publicKey.toString());
-              
-              if (userReactionsError) {
-                console.error('Error fetching user reactions:', userReactionsError);
-              } else if (userReactionsData) {
-                userReactions = userReactionsData.map(r => r.emoji_type);
+
+              if (connected && publicKey) {
+                const userId = await ensureUserExists(publicKey.toString()); // Get UUID
+
+                const { data: userReactionsData, error: userReactionsError } = await supabase
+                  .from('likes')
+                  .select('emoji_type')
+                  .eq('post_id', post.id)
+                  .eq('user_id', userId); // Use the UUID here
+
+                if (userReactionsError) {
+                  console.error('Error fetching user reactions:', userReactionsError);
+                } else if (userReactionsData) {
+                  userReactions = userReactionsData.map(r => r.emoji_type);
+                }
               }
-            }
+
 
             // Get comments count
             const { count: commentsCount, error: commentsError } = await supabase
