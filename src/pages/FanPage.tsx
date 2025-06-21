@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { TwitterTweetEmbed } from 'react-twitter-embed';
-import { Send, Heart, MessageCircle, ExternalLink, AlertCircle, Plus, X } from 'lucide-react';
+import { Send, Heart, MessageCircle, ExternalLink, AlertCircle, Plus, X, CheckCircle, Clock, ThumbsUp, Smile, Frown } from 'lucide-react';
 import { Transaction, SystemProgram, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { createClient } from '@supabase/supabase-js';
 
@@ -22,15 +22,43 @@ interface Post {
   users: {
     wallet_address: string;
   };
-  likes_count: number;
+  reactions: {
+    thumbs_up: number;
+    smiley: number;
+    shit: number;
+    heart: number;
+  };
+  user_reactions: string[];
   comments_count: number;
-  user_liked: boolean;
+}
+
+interface Comment {
+  id: string;
+  content: string;
+  created_at: string;
+  user_id: string;
+  users: {
+    wallet_address: string;
+  };
+}
+
+interface Notification {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
+  txHash?: string;
 }
 
 const FanPage: React.FC = () => {
   const { connected, publicKey, openModal, connection } = useWallet();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isPostModalOpen, setPostModalOpen] = useState(false);
+  const [isCommentsModalOpen, setCommentsModalOpen] = useState(false);
+  const [isTipModalOpen, setTipModalOpen] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [tipAmount, setTipAmount] = useState(0.01);
   const [newPost, setNewPost] = useState({
     content: '',
     twitter_embed: '',
@@ -41,17 +69,42 @@ const FanPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [transactionStatus, setTransactionStatus] = useState<'idle' | 'signing' | 'sending' | 'confirming' | 'saving'>('idle');
 
   const PLATFORM_FEE_ADDRESS = '4n7S3NeFj2WTJVrXJdhpiCjqmWExhV7XGNDxWD5bg756';
   const PLATFORM_FEE = 0.05 * LAMPORTS_PER_SOL; // 0.05 SOL
-  const TIP_AMOUNT = 0.01 * LAMPORTS_PER_SOL; // 0.01 SOL
 
-  const fetchPosts = React.useCallback(async () => {
+  const emojiTypes = [
+    { type: 'thumbs_up', icon: ThumbsUp, label: 'Thumbs Up' },
+    { type: 'smiley', icon: Smile, label: 'Smiley' },
+    { type: 'shit', icon: Frown, label: 'Shit' },
+    { type: 'heart', icon: Heart, label: 'Heart' }
+  ];
+
+  useEffect(() => {
+    fetchPosts();
+  }, [connected, publicKey]);
+
+  const addNotification = (notification: Omit<Notification, 'id'>) => {
+    const id = Date.now().toString();
+    const newNotification = { ...notification, id };
+    setNotifications(prev => [...prev, newNotification]);
+    
+    setTimeout(() => {
+      removeNotification(id);
+    }, notification.type === 'error' ? 15000 : 10000);
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const fetchPosts = async () => {
     try {
       setLoading(true);
       console.log('Fetching posts...');
       
-      // Fetch posts with user data
       const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select(`
@@ -74,25 +127,54 @@ const FanPage: React.FC = () => {
         throw postsError;
       }
 
-      console.log('Posts fetched:', postsData);
-
       if (!postsData || postsData.length === 0) {
         setPosts([]);
         return;
       }
 
-      // For each post, get likes and comments count
-      const postsWithCounts = await Promise.all(
+      const postsWithData = await Promise.all(
         postsData.map(async (post) => {
           try {
-            // Get likes count
-            const { count: likesCount, error: likesError } = await supabase
+            // Get reaction counts
+            const { data: reactionsData, error: reactionsError } = await supabase
               .from('likes')
-              .select('*', { count: 'exact', head: true })
+              .select('emoji_type')
               .eq('post_id', post.id);
 
-            if (likesError) {
-              console.error('Error fetching likes count:', likesError);
+            if (reactionsError) {
+              console.error('Error fetching reactions:', reactionsError);
+            }
+
+            // Count reactions by type
+            const reactions = {
+              thumbs_up: 0,
+              smiley: 0,
+              shit: 0,
+              heart: 0
+            };
+
+            if (reactionsData) {
+              reactionsData.forEach(reaction => {
+                if (reactions.hasOwnProperty(reaction.emoji_type)) {
+                  reactions[reaction.emoji_type as keyof typeof reactions]++;
+                }
+              });
+            }
+
+            // Get user's reactions
+            let userReactions: string[] = [];
+            if (connected && publicKey) {
+              const { data: userReactionsData, error: userReactionsError } = await supabase
+                .from('likes')
+                .select('emoji_type')
+                .eq('post_id', post.id)
+                .eq('user_id', publicKey.toString());
+              
+              if (userReactionsError) {
+                console.error('Error fetching user reactions:', userReactionsError);
+              } else if (userReactionsData) {
+                userReactions = userReactionsData.map(r => r.emoji_type);
+              }
             }
 
             // Get comments count
@@ -105,67 +187,62 @@ const FanPage: React.FC = () => {
               console.error('Error fetching comments count:', commentsError);
             }
 
-            // Check if current user liked this post
-            let userLiked = false;
-            if (connected && publicKey) {
-              const { data: userLike, error: likeError } = await supabase
-                .from('likes')
-                .select('id')
-                .eq('post_id', post.id)
-                .eq('user_id', publicKey.toString())
-                .maybeSingle();
-              
-              if (likeError) {
-                console.error('Error checking user like:', likeError);
-              } else {
-                userLiked = !!userLike;
-              }
-            }
-
-            // Fix: users property is an array, but Post expects an object
-            const userObj = Array.isArray(post.users) ? post.users[0] : post.users;
-
             return {
               ...post,
-              users: userObj,
-              likes_count: likesCount || 0,
-              comments_count: commentsCount || 0,
-              user_liked: userLiked
+              reactions,
+              user_reactions: userReactions,
+              comments_count: commentsCount || 0
             };
           } catch (error) {
             console.error('Error processing post:', post.id, error);
-            // Fix: users property is an array, but Post expects an object
-            const userObj = Array.isArray(post.users) ? post.users[0] : post.users;
             return {
               ...post,
-              users: userObj,
-              likes_count: 0,
-              comments_count: 0,
-              user_liked: false
+              reactions: { thumbs_up: 0, smiley: 0, shit: 0, heart: 0 },
+              user_reactions: [],
+              comments_count: 0
             };
           }
         })
       );
 
-      setPosts(postsWithCounts);
-      console.log('Posts with counts set:', postsWithCounts);
+      setPosts(postsWithData);
     } catch (error) {
       console.error('Error in fetchPosts:', error);
       setError('Failed to load posts');
     } finally {
       setLoading(false);
     }
-  }, [connected, publicKey]);
+  };
 
-  useEffect(() => {
-    fetchPosts();
-  }, [fetchPosts]);
+  const fetchComments = async (postId: string) => {
+    try {
+      const { data: commentsData, error: commentsError } = await supabase
+        .from('comments')
+        .select(`
+          id,
+          content,
+          created_at,
+          user_id,
+          users!comments_user_id_fkey (
+            wallet_address
+          )
+        `)
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+      if (commentsError) {
+        console.error('Error fetching comments:', commentsError);
+        throw commentsError;
+      }
+
+      setComments(commentsData || []);
+    } catch (error) {
+      console.error('Error in fetchComments:', error);
+    }
+  };
 
   const ensureUserExists = async (walletAddress: string) => {
     try {
-      console.log('Checking if user exists:', walletAddress);
-      
-      // Check if user exists
       const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('id')
@@ -178,12 +255,9 @@ const FanPage: React.FC = () => {
       }
 
       if (existingUser) {
-        console.log('User already exists:', existingUser.id);
         return existingUser.id;
       }
 
-      // Create new user
-      console.log('Creating new user...');
       const { data: newUser, error: insertError } = await supabase
         .from('users')
         .insert({ wallet_address: walletAddress })
@@ -195,7 +269,6 @@ const FanPage: React.FC = () => {
         throw insertError;
       }
 
-      console.log('New user created:', newUser.id);
       return newUser.id;
     } catch (error) {
       console.error('Error in ensureUserExists:', error);
@@ -216,12 +289,17 @@ const FanPage: React.FC = () => {
 
     setIsSubmitting(true);
     setError('');
+    setTransactionStatus('idle');
 
     try {
-      // ✅ Get Supabase user ID (UUID)
+      setTransactionStatus('signing');
+      addNotification({
+        type: 'info',
+        message: 'Preparing transaction...'
+      });
+
       const userId = await ensureUserExists(publicKey.toString());
 
-      // ✅ Create & send transaction for fee
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
@@ -230,29 +308,74 @@ const FanPage: React.FC = () => {
         })
       );
 
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
 
+      addNotification({
+        type: 'info',
+        message: 'Please approve the transaction in your wallet...'
+      });
+
       const { solana } = window as any;
-      if (!solana) throw new Error('Phantom wallet not found');
-
-      const signed = await solana.signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signed.serialize());
-      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-
-      if (confirmation.value.err) {
-        throw new Error('Transaction failed: ' + JSON.stringify(confirmation.value.err));
+      if (!solana) {
+        throw new Error('Phantom wallet not found');
       }
 
-      // ✅ Save post only after payment confirmation
+      const signed = await solana.signTransaction(transaction);
+
+      setTransactionStatus('sending');
+      addNotification({
+        type: 'info',
+        message: 'Sending transaction to network...'
+      });
+      
+      const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'processed'
+      });
+      
+      addNotification({
+        type: 'info',
+        message: `Transaction sent! Hash: ${signature.slice(0, 8)}...`,
+        txHash: signature
+      });
+
+      setTransactionStatus('confirming');
+      addNotification({
+        type: 'info',
+        message: 'Confirming transaction on blockchain...'
+      });
+
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight
+      }, 'confirmed');
+      
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      addNotification({
+        type: 'success',
+        message: `Payment confirmed! 0.05 SOL deducted successfully.`,
+        txHash: signature
+      });
+
+      setTransactionStatus('saving');
+      addNotification({
+        type: 'info',
+        message: 'Saving your post...'
+      });
+      
       const postData = {
         user_id: userId,
         content: newPost.content.trim(),
         twitter_embed: newPost.twitter_embed.trim() || null,
         website: newPost.website.trim() || null,
         facebook: newPost.facebook.trim() || null,
-        telegram: newPost.telegram.trim() || null,
+        telegram: newPost.telegram.trim() || null
       };
 
       const { data: insertedPost, error: dbError } = await supabase
@@ -261,12 +384,16 @@ const FanPage: React.FC = () => {
         .select()
         .single();
 
-      if (dbError || !insertedPost) {
-        console.error('Insert error:', dbError);
-        throw dbError || new Error('Failed to insert post');
+      if (dbError) {
+        console.error('Database error:', dbError);
+        throw dbError;
       }
 
-      // ✅ Reset state
+      addNotification({
+        type: 'success',
+        message: 'Post created successfully!'
+      });
+
       setPostModalOpen(false);
       setNewPost({
         content: '',
@@ -275,83 +402,180 @@ const FanPage: React.FC = () => {
         facebook: '',
         telegram: ''
       });
-
+      
       await fetchPosts();
+      
     } catch (error) {
       console.error('Error submitting post:', error);
+      let errorMessage = 'Failed to submit post. Please try again.';
+      
       if (error instanceof Error) {
-        setError(`Failed to submit post: ${error.message}`);
-      } else {
-        setError('Post submission failed. Try again.');
+        if (error.message.includes('User rejected')) {
+          errorMessage = 'Transaction was cancelled by user.';
+        } else if (error.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient SOL balance. You need at least 0.05 SOL plus gas fees.';
+        } else if (error.message.includes('Transaction failed')) {
+          errorMessage = `Transaction failed: ${error.message}`;
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
       }
+      
+      setError(errorMessage);
+      addNotification({
+        type: 'error',
+        message: errorMessage
+      });
     } finally {
       setIsSubmitting(false);
+      setTransactionStatus('idle');
     }
   };
 
-
-  const handleLike = async (postId: string) => {
+  const handleEmojiReaction = async (postId: string, emojiType: string) => {
     if (!connected || !publicKey) {
       openModal();
       return;
     }
 
     try {
-      // ✅ Use real Supabase user ID (not wallet address string)
-      const userId = await ensureUserExists(publicKey.toString());
+      await ensureUserExists(publicKey.toString());
 
-      const { data: existingLike } = await supabase
+      const { data: existingReaction } = await supabase
         .from('likes')
         .select('id')
         .eq('post_id', postId)
-        .eq('user_id', userId)
+        .eq('user_id', publicKey.toString())
+        .eq('emoji_type', emojiType)
         .maybeSingle();
 
-      if (existingLike) {
-        await supabase.from('likes').delete().eq('id', existingLike.id);
+      if (existingReaction) {
+        await supabase
+          .from('likes')
+          .delete()
+          .eq('id', existingReaction.id);
       } else {
-        await supabase.from('likes').insert({
-          post_id: postId,
-          user_id: userId,
-        });
+        await supabase
+          .from('likes')
+          .insert({
+            post_id: postId,
+            user_id: publicKey.toString(),
+            emoji_type: emojiType
+          });
       }
-
+      
       await fetchPosts();
     } catch (error) {
-      console.error('Error toggling like:', error);
+      console.error('Error toggling reaction:', error);
     }
   };
 
+  const handleSubmitComment = async () => {
+    if (!connected || !publicKey || !selectedPost) {
+      openModal();
+      return;
+    }
 
-  const handleTip = async (recipientAddress: string) => {
-    if (!connected || !publicKey) {
+    if (!newComment.trim()) {
+      return;
+    }
+
+    try {
+      const userId = await ensureUserExists(publicKey.toString());
+
+      const { error: commentError } = await supabase
+        .from('comments')
+        .insert({
+          post_id: selectedPost.id,
+          user_id: userId,
+          content: newComment.trim()
+        });
+
+      if (commentError) {
+        throw commentError;
+      }
+
+      setNewComment('');
+      await fetchComments(selectedPost.id);
+      await fetchPosts();
+    } catch (error) {
+      console.error('Error submitting comment:', error);
+      addNotification({
+        type: 'error',
+        message: 'Failed to submit comment'
+      });
+    }
+  };
+
+  const handleTip = async () => {
+    if (!connected || !publicKey || !selectedPost) {
       openModal();
       return;
     }
 
     try {
+      addNotification({
+        type: 'info',
+        message: 'Preparing tip transaction...'
+      });
+
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
-          toPubkey: new PublicKey(recipientAddress),
-          lamports: TIP_AMOUNT,
+          toPubkey: new PublicKey(selectedPost.users.wallet_address),
+          lamports: tipAmount * LAMPORTS_PER_SOL,
         })
       );
 
-      const { blockhash } = await connection.getLatestBlockhash();
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = publicKey;
 
       const { solana } = window as any;
       const signed = await solana.signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(signature);
+      
+      addNotification({
+        type: 'info',
+        message: 'Sending tip...'
+      });
 
-      alert('Tip sent successfully!');
+      const signature = await connection.sendRawTransaction(signed.serialize());
+      
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash,
+        lastValidBlockHeight
+      }, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error('Tip transaction failed');
+      }
+
+      addNotification({
+        type: 'success',
+        message: `Tip sent successfully! ${tipAmount} SOL sent.`,
+        txHash: signature
+      });
+
+      setTipModalOpen(false);
     } catch (error) {
       console.error('Error sending tip:', error);
-      alert('Failed to send tip. Please try again.');
+      addNotification({
+        type: 'error',
+        message: 'Failed to send tip. Please try again.'
+      });
     }
+  };
+
+  const openCommentsModal = (post: Post) => {
+    setSelectedPost(post);
+    setCommentsModalOpen(true);
+    fetchComments(post.id);
+  };
+
+  const openTipModal = (post: Post) => {
+    setSelectedPost(post);
+    setTipModalOpen(true);
   };
 
   const extractTweetId = (url: string) => {
@@ -362,6 +586,21 @@ const FanPage: React.FC = () => {
 
   const formatWalletAddress = (address: string) => {
     return `${address.slice(0, 4)}...${address.slice(-4)}`;
+  };
+
+  const getTransactionStatusMessage = () => {
+    switch (transactionStatus) {
+      case 'signing':
+        return 'Preparing transaction...';
+      case 'sending':
+        return 'Sending transaction...';
+      case 'confirming':
+        return 'Confirming payment...';
+      case 'saving':
+        return 'Saving post...';
+      default:
+        return isSubmitting ? 'Processing...' : 'Pay 0.05 SOL & Submit Post';
+    }
   };
 
   if (loading) {
@@ -377,21 +616,74 @@ const FanPage: React.FC = () => {
 
   return (
     <div className="min-h-screen py-24 px-4 bg-primary-light dark:bg-primary">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+      <h2 className="section-title">MGF Fan Hub</h2>
+      <div className="text-center mb-12">
+          <p className="text-xl mb-4">
+            MGF Fan Page — From Mt. Gox to Meme Glory
+          </p>
+          <p className="text-text-secondary max-w-3xl mx-auto">
+            Own the moment. React. Tip. Meme the legend into the future.
+          </p>
+        </div>
+      {/* Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+        {notifications.map((notification) => (
+          <div
+            key={notification.id}
+            className={`p-4 rounded-lg shadow-lg border backdrop-blur-sm transition-all duration-300 ${
+              notification.type === 'success'
+                ? 'bg-green-500/10 border-green-500/20 text-green-400'
+                : notification.type === 'error'
+                ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                {notification.type === 'success' && <CheckCircle size={18} />}
+                {notification.type === 'error' && <AlertCircle size={18} />}
+                {notification.type === 'info' && <Clock size={18} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{notification.message}</p>
+                {notification.txHash && (
+                  <a
+                    href={`https://explorer.solana.com/tx/${notification.txHash}?cluster=devnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs underline hover:no-underline mt-1 block"
+                  >
+                    View on Explorer
+                  </a>
+                )}
+              </div>
+              <button
+                onClick={() => removeNotification(notification.id)}
+                className="flex-shrink-0 text-current hover:opacity-70"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Left Sidebar - User Profile */}
         <div className="md:col-span-1">
-          <div className="holographic p-6 sticky top-24">
+          <div className="holographic p-4 sticky top-24">
             {connected ? (
               <>
-                <h2 className="text-xl font-display mb-4 text-text-light dark:text-white">Your Profile</h2>
-                <div className="text-sm font-mono mb-4 text-accent-green break-all">
+                <h2 className="text-lg font-display mb-3 text-text-light dark:text-white">Your Profile</h2>
+                <div className="text-xs font-mono mb-3 text-accent-green break-all">
                   {formatWalletAddress(publicKey?.toString() || '')}
                 </div>
                 <button
                   onClick={() => setPostModalOpen(true)}
-                  className="btn btn-primary w-full flex items-center justify-center gap-2"
+                  className="btn btn-primary w-full flex items-center justify-center gap-2 text-sm py-2 text-text-light dark:text-white hover:bg-accent-purple/80 transition-colors disabled:opacity-50"
+                  disabled={isSubmitting}
                 >
-                  <Plus size={16} />
+                  <Plus size={14} />
                   Create Post
                 </button>
                 <p className="text-xs text-text-secondary-light dark:text-text-secondary mt-2 text-center">
@@ -400,10 +692,10 @@ const FanPage: React.FC = () => {
               </>
             ) : (
               <div className="text-center">
-                <p className="text-text-secondary-light dark:text-text-secondary mb-4">
+                <p className="text-text-secondary-light dark:text-text-secondary mb-3 text-sm">
                   Connect your wallet to create posts and interact with the community
                 </p>
-                <button onClick={openModal} className="btn btn-primary">
+                <button onClick={openModal} className="btn btn-primary text-sm py-2">
                   Connect Wallet
                 </button>
               </div>
@@ -412,53 +704,53 @@ const FanPage: React.FC = () => {
         </div>
 
         {/* Main Content - Posts */}
-        <div className="md:col-span-2">
-          <div className="space-y-6">
+        <div className="md:col-span-3">
+          <div className="space-y-4">
             {error && (
-              <div className="holographic p-4 border-alert/50 bg-alert/10">
-                <div className="flex items-center gap-2 text-alert">
-                  <AlertCircle size={18} />
+              <div className="holographic p-3 border-alert/50 bg-alert/10">
+                <div className="flex items-center gap-2 text-alert text-sm">
+                  <AlertCircle size={16} />
                   <span>{error}</span>
                 </div>
               </div>
             )}
 
             {posts.length === 0 ? (
-              <div className="holographic p-8 text-center">
+              <div className="holographic p-6 text-center">
                 <p className="text-text-secondary-light dark:text-text-secondary">
                   No posts yet. Be the first to share something!
                 </p>
               </div>
             ) : (
               posts.map((post) => (
-                <div key={post.id} className="holographic p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="font-mono text-sm text-accent-green">
+                <div key={post.id} className="holographic p-4">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="font-mono text-xs text-accent-green">
                       {formatWalletAddress(post.users.wallet_address)}
                     </div>
-                    <div className="text-sm text-text-secondary-light dark:text-text-secondary">
+                    <div className="text-xs text-text-secondary-light dark:text-text-secondary">
                       {new Date(post.created_at).toLocaleDateString()}
                     </div>
                   </div>
 
-                  <p className="mb-4 text-text-light dark:text-white whitespace-pre-wrap">{post.content}</p>
+                  <p className="mb-3 text-text-light dark:text-white whitespace-pre-wrap text-sm leading-relaxed">{post.content}</p>
 
                   {post.twitter_embed && extractTweetId(post.twitter_embed) && (
-                    <div className="mb-4">
+                    <div className="mb-3">
                       <TwitterTweetEmbed tweetId={extractTweetId(post.twitter_embed)!} />
                     </div>
                   )}
 
                   {(post.website || post.facebook || post.telegram) && (
-                    <div className="flex flex-wrap gap-3 mb-4">
+                    <div className="flex flex-wrap gap-2 mb-3">
                       {post.website && (
                         <a
                           href={post.website}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-sm text-accent-purple hover:text-accent-purple/80 transition-colors"
+                          className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
                         >
-                          <ExternalLink size={14} /> Website
+                          <ExternalLink size={12} /> Website
                         </a>
                       )}
                       {post.facebook && (
@@ -466,9 +758,9 @@ const FanPage: React.FC = () => {
                           href={post.facebook}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-sm text-accent-purple hover:text-accent-purple/80 transition-colors"
+                          className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
                         >
-                          <ExternalLink size={14} /> Facebook
+                          <ExternalLink size={12} /> Facebook
                         </a>
                       )}
                       {post.telegram && (
@@ -476,40 +768,52 @@ const FanPage: React.FC = () => {
                           href={post.telegram}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-sm text-accent-purple hover:text-accent-purple/80 transition-colors"
+                          className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
                         >
-                          <ExternalLink size={14} /> Telegram
+                          <ExternalLink size={12} /> Telegram
                         </a>
                       )}
                     </div>
                   )}
 
-                  <div className="flex items-center gap-6 pt-4 border-t border-white/10">
-                    <button
-                      onClick={() => handleLike(post.id)}
-                      className={`flex items-center gap-2 transition-colors ${
-                        post.user_liked 
-                          ? 'text-accent-purple' 
-                          : 'text-text-secondary-light dark:text-text-secondary hover:text-accent-purple'
-                      }`}
-                    >
-                      <Heart size={18} fill={post.user_liked ? 'currentColor' : 'none'} />
-                      {post.likes_count}
-                    </button>
-                    
-                    <div className="flex items-center gap-2 text-text-secondary-light dark:text-text-secondary">
-                      <MessageCircle size={18} />
-                      {post.comments_count}
+                  <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                    {/* Emoji Reactions */}
+                    <div className="flex items-center gap-3">
+                      {emojiTypes.map(({ type, icon: Icon }) => (
+                        <button
+                          key={type}
+                          onClick={() => handleEmojiReaction(post.id, type)}
+                          className={`flex items-center gap-1 transition-colors text-xs ${
+                            post.user_reactions.includes(type)
+                              ? 'text-accent-purple' 
+                              : 'text-text-secondary-light dark:text-text-secondary hover:text-accent-purple'
+                          }`}
+                        >
+                          <Icon size={14} fill={post.user_reactions.includes(type) ? 'currentColor' : 'none'} />
+                          {post.reactions[type as keyof typeof post.reactions]}
+                        </button>
+                      ))}
                     </div>
                     
-                    {connected && post.users.wallet_address !== publicKey?.toString() && (
+                    {/* Actions */}
+                    <div className="flex items-center gap-3">
                       <button
-                        onClick={() => handleTip(post.users.wallet_address)}
-                        className="flex items-center gap-2 text-text-secondary-light dark:text-text-secondary hover:text-accent-green transition-colors"
+                        onClick={() => openCommentsModal(post)}
+                        className="flex items-center gap-1 text-text-secondary-light dark:text-text-secondary hover:text-accent-green transition-colors text-xs"
                       >
-                        <Send size={18} /> Tip 0.01 SOL
+                        <MessageCircle size={14} />
+                        {post.comments_count}
                       </button>
-                    )}
+                      
+                      {connected && post.users.wallet_address !== publicKey?.toString() && (
+                        <button
+                          onClick={() => openTipModal(post)}
+                          className="flex items-center gap-1 text-text-secondary-light dark:text-text-secondary hover:text-accent-green transition-colors text-xs"
+                        >
+                          <Send size={14} /> Tip
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))
@@ -521,13 +825,14 @@ const FanPage: React.FC = () => {
       {/* Create Post Modal */}
       {isPostModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setPostModalOpen(false)} />
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !isSubmitting && setPostModalOpen(false)} />
           <div className="relative z-10 bg-primary-light dark:bg-primary w-full max-w-sm sm:max-w-md lg:max-w-lg rounded-xl neon-border p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4 sm:mb-6">
               <h3 className="text-lg sm:text-xl font-display text-text-light dark:text-white">Create Post</h3>
               <button 
-                onClick={() => setPostModalOpen(false)}
-                className="text-text-secondary-light dark:text-text-secondary hover:text-text-light dark:hover:text-white"
+                onClick={() => !isSubmitting && setPostModalOpen(false)}
+                className="text-text-secondary-light dark:text-text-secondary hover:text-text-light dark:hover:text-white disabled:opacity-50"
+                disabled={isSubmitting}
               >
                 <X size={20} />
               </button>
@@ -546,10 +851,11 @@ const FanPage: React.FC = () => {
                 <textarea
                   value={newPost.content}
                   onChange={(e) => setNewPost({ ...newPost, content: e.target.value })}
-                  className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm resize-none"
+                  className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm resize-none disabled:opacity-50"
                   rows={4}
                   placeholder="Share your thoughts..."
                   maxLength={500}
+                  disabled={isSubmitting}
                 />
                 <div className="text-xs text-text-secondary-light dark:text-text-secondary mt-1 text-right">
                   {newPost.content.length}/500
@@ -562,8 +868,9 @@ const FanPage: React.FC = () => {
                   type="text"
                   value={newPost.twitter_embed}
                   onChange={(e) => setNewPost({ ...newPost, twitter_embed: e.target.value })}
-                  className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm"
+                  className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm disabled:opacity-50"
                   placeholder="https://twitter.com/username/status/123456789"
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -574,8 +881,9 @@ const FanPage: React.FC = () => {
                     type="url"
                     value={newPost.website}
                     onChange={(e) => setNewPost({ ...newPost, website: e.target.value })}
-                    className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm"
+                    className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm disabled:opacity-50"
                     placeholder="https://example.com"
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -585,8 +893,9 @@ const FanPage: React.FC = () => {
                     type="url"
                     value={newPost.facebook}
                     onChange={(e) => setNewPost({ ...newPost, facebook: e.target.value })}
-                    className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm"
+                    className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm disabled:opacity-50"
                     placeholder="https://facebook.com/username"
+                    disabled={isSubmitting}
                   />
                 </div>
 
@@ -596,8 +905,9 @@ const FanPage: React.FC = () => {
                     type="url"
                     value={newPost.telegram}
                     onChange={(e) => setNewPost({ ...newPost, telegram: e.target.value })}
-                    className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm"
+                    className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm disabled:opacity-50"
                     placeholder="https://t.me/username"
+                    disabled={isSubmitting}
                   />
                 </div>
               </div>
@@ -615,11 +925,125 @@ const FanPage: React.FC = () => {
                 <button
                   onClick={handleSubmitPost}
                   disabled={isSubmitting || !newPost.content.trim()}
-                  className="btn btn-primary w-full text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn btn-primary w-full text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {isSubmitting ? 'Processing Payment...' : 'Pay 0.05 SOL & Submit Post'}
+                  {isSubmitting && <Clock size={16} className="animate-spin" />}
+                  {getTransactionStatusMessage()}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comments Modal */}
+      {isCommentsModalOpen && selectedPost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setCommentsModalOpen(false)} />
+          <div className="relative z-10 bg-primary-light dark:bg-primary w-full max-w-2xl rounded-xl neon-border p-6 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-display text-text-light dark:text-white">Comments</h3>
+              <button 
+                onClick={() => setCommentsModalOpen(false)}
+                className="text-text-secondary-light dark:text-text-secondary hover:text-text-light dark:hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Add Comment */}
+            {connected && (
+              <div className="mb-6 p-4 bg-white/5 rounded-lg">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm resize-none"
+                  rows={3}
+                  placeholder="Write a comment..."
+                  maxLength={300}
+                />
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-xs text-text-secondary-light dark:text-text-secondary">
+                    {newComment.length}/300
+                  </span>
+                  <button
+                    onClick={handleSubmitComment}
+                    disabled={!newComment.trim()}
+                    className="btn btn-primary text-sm text-gray-600 py-2 px-4 disabled:opacity-50"
+                  >
+                    Submit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Comments List */}
+            <div className="space-y-4">
+              {comments.length === 0 ? (
+                <p className="text-text-secondary-light dark:text-text-secondary text-center py-8">
+                  No comments yet. Be the first to comment!
+                </p>
+              ) : (
+                comments.map((comment) => (
+                  <div key={comment.id} className="p-4 bg-white/5 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-mono text-xs text-accent-green">
+                        {formatWalletAddress(comment.users.wallet_address)}
+                      </span>
+                      <span className="text-xs text-text-secondary-light dark:text-text-secondary">
+                        {new Date(comment.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-text-light dark:text-white text-sm">{comment.content}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tip Modal */}
+      {isTipModalOpen && selectedPost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setTipModalOpen(false)} />
+          <div className="relative z-10 bg-primary-light dark:bg-primary w-full max-w-md rounded-xl neon-border p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-display text-text-light dark:text-white">Send Tip</h3>
+              <button 
+                onClick={() => setTipModalOpen(false)}
+                className="text-text-secondary-light dark:text-text-secondary hover:text-text-light dark:hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm mb-2 text-text-light dark:text-white">Recipient</label>
+                <div className="p-3 bg-white/5 rounded-lg font-mono text-sm text-accent-green">
+                  {selectedPost.users.wallet_address}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-2 text-text-light dark:text-white">Amount (SOL)</label>
+                <input
+                  type="number"
+                  value={tipAmount}
+                  onChange={(e) => setTipAmount(parseFloat(e.target.value) || 0.01)}
+                  min="0.001"
+                  step="0.001"
+                  className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm"
+                />
+              </div>
+
+              <button
+                onClick={handleTip}
+                className="btn btn-primary w-full text-text-secondary-dark dark:text-text-light text-sm py-2 disabled:opacity-50"
+              >
+                Send {tipAmount} SOL
+              </button>
             </div>
           </div>
         </div>

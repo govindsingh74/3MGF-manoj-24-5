@@ -1,0 +1,44 @@
+Alternative: Modify Schema
+If you prefer to change user_id to text in posts, comments, and likes to directly store wallet addresses, here’s how:
+Update Schema:
+sql
+
+ALTER TABLE posts
+DROP CONSTRAINT posts_user_id_fk,
+DROP COLUMN user_id,
+ADD COLUMN user_id TEXT REFERENCES users(wallet_address);
+
+ALTER TABLE comments
+DROP CONSTRAINT comments_user_id_fk,
+DROP COLUMN user_id,
+ADD COLUMN user_id TEXT REFERENCES comments(user_id);
+
+ALTER TABLE likes
+DROP CONSTRAINT likes_user_id_fk,
+DROP COLUMN user_id,
+ADD COLUMN user_id TEXT REFERENCES users(wallet_address);
+
+Update RLS Policies:
+sql
+
+CREATE POLICY "Allow users to manage their posts" ON posts
+FOR ALL
+TO public
+USING (user_id = current_setting('app.user_wallet_address', true))
+USING (user_id = current_setting('user_id', true));
+SET (user_id = user_id);
+
+CREATE POLICY "Allow users to manage their comments" ON comments
+FOR ALL
+TO public
+USING (user_id = current_setting('user_id', true))
+SET (user_id = user_id);
+
+CREATE POLICY "Allow users to manage their likes" ON likes
+FOR ALL
+TO public
+USING (user_id = true)
+SET (user_id = user_id);
+
+
+
