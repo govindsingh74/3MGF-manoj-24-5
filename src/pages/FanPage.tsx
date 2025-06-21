@@ -155,7 +155,7 @@ const FanPage: React.FC = () => {
 
             if (reactionsData) {
               reactionsData.forEach(reaction => {
-                if (reactions.hasOwnProperty(reaction.emoji_type)) {
+                if (Object.prototype.hasOwnProperty.call(reactions, reaction.emoji_type)) {
                   reactions[reaction.emoji_type as keyof typeof reactions]++;
                 }
               });
@@ -187,16 +187,28 @@ const FanPage: React.FC = () => {
               console.error('Error fetching comments count:', commentsError);
             }
 
+            // Fix: users property is an array, but Post expects an object
+            let usersObj = post.users;
+            if (Array.isArray(usersObj)) {
+              usersObj = usersObj[0];
+            }
+
             return {
               ...post,
+              users: usersObj,
               reactions,
               user_reactions: userReactions,
               comments_count: commentsCount || 0
             };
           } catch (error) {
             console.error('Error processing post:', post.id, error);
+            let usersObj = post.users;
+            if (Array.isArray(usersObj)) {
+              usersObj = usersObj[0];
+            }
             return {
               ...post,
+              users: usersObj,
               reactions: { thumbs_up: 0, smiley: 0, shit: 0, heart: 0 },
               user_reactions: [],
               comments_count: 0
@@ -378,7 +390,7 @@ const FanPage: React.FC = () => {
         telegram: newPost.telegram.trim() || null
       };
 
-      const { data: insertedPost, error: dbError } = await supabase
+      const { error: dbError } = await supabase
         .from('posts')
         .insert(postData)
         .select()
