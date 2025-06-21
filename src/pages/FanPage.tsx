@@ -616,7 +616,7 @@ const FanPage: React.FC = () => {
 
   return (
     <div className="min-h-screen py-24 px-4 bg-primary-light dark:bg-primary">
-      <h2 className="section-title">MGF Fan Hub</h2>
+      <h2 className="section-title">MGF Fan Hub(devnet)</h2>
       <div className="text-center mb-12">
           <p className="text-xl mb-4">
             MGF Fan Page — From Mt. Gox to Meme Glory
