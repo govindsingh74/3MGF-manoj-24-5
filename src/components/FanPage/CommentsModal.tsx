@@ -1,71 +1,65 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { Post, Comment } from './types';
+import { formatWalletAddress } from './utils';
+import { COMMENT_MAX_LENGTH } from './constants';
 
-const formatWalletAddress = (address: string) =>
-  `${address.slice(0, 4)}...${address.slice(-4)}`;
-
-type Comment = {
-  id: string;
-  content: string;
-  created_at: string;
-  users: {
-    wallet_address: string;
-  };
-};
-
-type CommentsModalProps = {
-  isCommentsModalOpen: boolean;
-  setCommentsModalOpen: (open: boolean) => void;
-  selectedPost: any; // Replace 'any' with the actual type if available
+interface CommentsModalProps {
+  isOpen: boolean;
+  post: Post | null;
   comments: Comment[];
   newComment: string;
-  setNewComment: (comment: string) => void;
-  handleSubmitComment: () => void;
   connected: boolean;
-};
+  onClose: () => void;
+  onCommentChange: (comment: string) => void;
+  onSubmitComment: () => void;
+}
 
 const CommentsModal: React.FC<CommentsModalProps> = ({
-  isCommentsModalOpen,
-  setCommentsModalOpen,
-  selectedPost,
+  isOpen,
+  post,
   comments,
   newComment,
-  setNewComment,
-  handleSubmitComment,
-  connected
+  connected,
+  onClose,
+  onCommentChange,
+  onSubmitComment
 }) => {
-  if (!isCommentsModalOpen || !selectedPost) return null;
+  if (!isOpen || !post) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setCommentsModalOpen(false)} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 bg-primary-light dark:bg-primary w-full max-w-2xl rounded-xl neon-border p-6 max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-display text-text-light dark:text-white">Comments</h3>
-          <button
-            onClick={() => setCommentsModalOpen(false)}
+          <button 
+            onClick={onClose}
             className="text-text-secondary-light dark:text-text-secondary hover:text-text-light dark:hover:text-white"
           >
             <X size={20} />
           </button>
         </div>
 
+        {/* Add Comment */}
         {connected && (
           <div className="mb-6 p-4 bg-white/5 rounded-lg">
             <textarea
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 text-sm text-text-light dark:text-white resize-none"
+              onChange={(e) => onCommentChange(e.target.value)}
+              className="w-full bg-white/5 border border-accent-purple/20 rounded-lg p-3 focus:outline-none focus:border-accent-purple text-text-light dark:text-white text-sm resize-none"
               rows={3}
-              maxLength={300}
               placeholder="Write a comment..."
+              maxLength={COMMENT_MAX_LENGTH}
             />
             <div className="flex justify-between items-center mt-2">
-              <span className="text-xs text-text-secondary-light dark:text-text-secondary">{newComment.length}/300</span>
+              <span className="text-xs text-text-secondary-light dark:text-text-secondary">
+                {newComment.length}/{COMMENT_MAX_LENGTH}
+              </span>
               <button
-                onClick={handleSubmitComment}
+                onClick={onSubmitComment}
                 disabled={!newComment.trim()}
-                className="btn btn-primary text-sm px-4 py-2 disabled:opacity-50"
+                className="btn btn-primary text-sm py-2 px-4 disabled:opacity-50"
               >
                 Submit
               </button>
@@ -73,6 +67,7 @@ const CommentsModal: React.FC<CommentsModalProps> = ({
           </div>
         )}
 
+        {/* Comments List */}
         <div className="space-y-4">
           {comments.length === 0 ? (
             <p className="text-text-secondary-light dark:text-text-secondary text-center py-8">
@@ -89,7 +84,7 @@ const CommentsModal: React.FC<CommentsModalProps> = ({
                     {new Date(comment.created_at).toLocaleDateString()}
                   </span>
                 </div>
-                <p className="text-sm text-text-light dark:text-white">{comment.content}</p>
+                <p className="text-text-light dark:text-white text-sm">{comment.content}</p>
               </div>
             ))
           )}

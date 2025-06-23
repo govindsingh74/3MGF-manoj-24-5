@@ -1,23 +1,13 @@
 import React from 'react';
-import { X, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { Notification } from './types';
 
-type Notification = {
-  id: string | number;
-  type: 'success' | 'error' | 'info';
-  message: string;
-  txHash?: string;
-};
-
-interface NotificationsProps {
+interface NotificationSystemProps {
   notifications: Notification[];
-  setNotifications: React.Dispatch<React.SetStateAction<Notification[]>>;
+  onRemove: (id: string) => void;
 }
 
-const Notifications: React.FC<NotificationsProps> = ({ notifications, setNotifications }) => {
-  const removeNotification = (id) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
-
+const NotificationSystem: React.FC<NotificationSystemProps> = ({ notifications, onRemove }) => {
   return (
     <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
       {notifications.map((notification) => (
@@ -51,7 +41,7 @@ const Notifications: React.FC<NotificationsProps> = ({ notifications, setNotific
               )}
             </div>
             <button
-              onClick={() => removeNotification(notification.id)}
+              onClick={() => onRemove(notification.id)}
               className="flex-shrink-0 text-current hover:opacity-70"
             >
               <X size={16} />
@@ -63,4 +53,4 @@ const Notifications: React.FC<NotificationsProps> = ({ notifications, setNotific
   );
 };
 
-export default Notifications;
+export default NotificationSystem;
