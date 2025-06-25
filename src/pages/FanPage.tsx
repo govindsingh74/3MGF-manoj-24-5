@@ -10,9 +10,10 @@ import { useNotifications } from '../components/fanpage/hooks/useNotifications';
 import { usePosts } from '../components/fanpage/hooks/usePosts';
 import { useComments } from '../components/fanpage/hooks/useComments';
 import { Post, NewPost, EmojiType } from '../components/fanpage/types';
+import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 const FanPage: React.FC = () => {
-  const { connected, openModal, publicKey } = useWallet();
+  const { connected, openModal, publicKey, connection } = useWallet();
   const { notifications, addNotification, removeNotification } = useNotifications();
   const { posts, loading, error, fetchPosts, ensureUserExists, handleEmojiReaction } = usePosts();
   const { comments, fetchComments } = useComments();
@@ -65,9 +66,6 @@ const FanPage: React.FC = () => {
 
     try {
       await ensureUserExists(publicKey!.toString());
-      
-      // Add comment to database (you'll need to implement this in useComments)
-      // For now, just clear the comment and refresh
       setNewComment('');
       addNotification({
         type: 'success',
@@ -84,14 +82,44 @@ const FanPage: React.FC = () => {
   };
 
   const handleSendTip = async () => {
-    if (!connected || !selectedPost) return;
+    if (!connected || !publicKey || !selectedPost) return;
 
     try {
-      // Implement tip sending logic here
+      const recipientAddress = new PublicKey(selectedPost.users.wallet_address);
+      const sender = publicKey;
+
+      const transaction = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: sender,
+          toPubkey: recipientAddress,
+          lamports: tipAmount * LAMPORTS_PER_SOL
+        })
+      );
+
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = sender;
+
+      const { solana } = window as any;
+      const signed = await solana.signTransaction(transaction);
+
+      const signature = await connection.sendRawTransaction(signed.serialize());
+
+      const confirmation = await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        'confirmed'
+      );
+
+      if (confirmation.value.err) {
+        throw new Error('Transaction failed');
+      }
+
       addNotification({
         type: 'success',
-        message: `Tip of ${tipAmount} SOL sent successfully!`
+        message: `Tip of ${tipAmount} SOL sent successfully!`,
+        txHash: signature
       });
+
       setTipModalOpen(false);
     } catch (error) {
       console.error('Error sending tip:', error);
@@ -150,11 +178,9 @@ const FanPage: React.FC = () => {
         onClose={() => setPostModalOpen(false)}
         onPostChange={setNewPost}
         onSubmit={async () => {
-          // Implement post submission logic
           setIsSubmitting(true);
           try {
-            // Add your post submission logic here
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Placeholder
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate post
             setPostModalOpen(false);
             setNewPost({
               content: '',

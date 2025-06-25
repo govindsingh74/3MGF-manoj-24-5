@@ -1,4 +1,10 @@
 {
+  "compilerOptions": {
+    "baseUrl": "src",
+    "paths": {
+      "@types/*": ["components/fanpage/types/*"]
+    }
+  },
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },

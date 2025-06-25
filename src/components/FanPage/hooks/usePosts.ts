@@ -281,7 +281,7 @@ export const usePosts = () => {
 
   useEffect(() => {
     fetchPosts();
-  }, [connected, publicKey]);
+  }, [connected, publicKey, fetchPosts]);
 
   return {
     posts,
