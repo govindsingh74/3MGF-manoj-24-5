@@ -1,23 +1,51 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
 import NotificationSystem from '../components/fanpage/NotificationSystem';
+import GlobalActivityNotifications from '../components/fanpage/GlobalActivityNotifications';
+import NetworkBanner from '../components/fanpage/NetworkBanner';
 import UserProfile from '../components/fanpage/UserProfile';
-import PostsList from '../components/fanpage/PostsList';
+import EnhancedPostsList from '../components/fanpage/EnhancedPostsList';
 import CreatePostModal from '../components/fanpage/CreatePostModal';
 import CommentsModal from '../components/fanpage/CommentsModal';
 import TipModal from '../components/fanpage/TipModal';
 import { useNotifications } from '../components/fanpage/hooks/useNotifications';
-import { usePosts } from '../components/fanpage/hooks/usePosts';
+import { useEnhancedPosts } from '../components/fanpage/hooks/useEnhancedPosts';
 import { useComments } from '../components/fanpage/hooks/useComments';
-import { Post, NewPost, EmojiType } from '../components/fanpage/types';
-import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { usePostCreation } from '../components/fanpage/hooks/usePostCreation';
+import { useTipTransfer } from '../components/fanpage/hooks/useTipTransfer';
+import { Post, NewPost } from '../components/fanpage/types';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 const FanPage: React.FC = () => {
   const { connected, openModal, publicKey, connection } = useWallet();
   const { notifications, addNotification, removeNotification } = useNotifications();
-  const { posts, loading, error, fetchPosts, ensureUserExists, handleEmojiReaction } = usePosts();
+  const { 
+    posts, 
+    loading, 
+    loadingMore, 
+    error, 
+    hasMore, 
+    fetchPosts, 
+    ensureUserExists, 
+    handleEmojiReaction,
+    loadMore 
+  } = useEnhancedPosts();
   const { comments, fetchComments } = useComments();
+  const { createPost, isSubmitting, transactionStatus, error: postError, setError } = usePostCreation();
+  const { 
+    sendTip, 
+    isSubmitting: isTipSubmitting, 
+    transactionStatus: tipTransactionStatus, 
+    error: tipError, 
+    setError: setTipError 
+  } = useTipTransfer();
 
+  const [currentNetwork, setCurrentNetwork] = useState<'devnet' | 'testnet' | 'mainnet'>('devnet');
   const [isPostModalOpen, setPostModalOpen] = useState(false);
   const [isCommentsModalOpen, setCommentsModalOpen] = useState(false);
   const [isTipModalOpen, setTipModalOpen] = useState(false);
@@ -31,7 +59,17 @@ const FanPage: React.FC = () => {
     facebook: '',
     telegram: ''
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleNetworkChange = (network: 'devnet' | 'testnet' | 'mainnet') => {
+    if (network === 'testnet' || network === 'mainnet') {
+      addNotification({
+        type: 'info',
+        message: `${network.toUpperCase()} coming soon! Stay tuned for updates.`
+      });
+      return;
+    }
+    setCurrentNetwork(network);
+  };
 
   const openCommentsModal = (post: Post) => {
     setSelectedPost(post);
@@ -42,9 +80,10 @@ const FanPage: React.FC = () => {
   const openTipModal = (post: Post) => {
     setSelectedPost(post);
     setTipModalOpen(true);
+    setTipError('');
   };
 
-  const handleEmojiClick = async (postId: string, emojiType: EmojiType) => {
+  const handleEmojiClick = async (postId: string, emojiType: string) => {
     if (!connected) {
       openModal();
       return;
@@ -65,7 +104,20 @@ const FanPage: React.FC = () => {
     if (!connected || !selectedPost || !newComment.trim()) return;
 
     try {
-      await ensureUserExists(publicKey!.toString());
+      const userId = await ensureUserExists(publicKey!.toString());
+      
+      const { error: commentError } = await supabase
+        .from('comments')
+        .insert({
+          post_id: selectedPost.id,
+          user_id: userId,
+          content: newComment.trim()
+        });
+
+      if (commentError) {
+        throw commentError;
+      }
+      
       setNewComment('');
       addNotification({
         type: 'success',
@@ -82,50 +134,71 @@ const FanPage: React.FC = () => {
   };
 
   const handleSendTip = async () => {
-    if (!connected || !publicKey || !selectedPost) return;
+    if (!connected || !selectedPost || !publicKey) {
+      openModal();
+      return;
+    }
 
     try {
-      const recipientAddress = new PublicKey(selectedPost.users.wallet_address);
-      const sender = publicKey;
-
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: sender,
-          toPubkey: recipientAddress,
-          lamports: tipAmount * LAMPORTS_PER_SOL
-        })
+      setTipError('');
+      const result = await sendTip(
+        selectedPost.users.wallet_address,
+        tipAmount,
+        publicKey,
+        connection
       );
-
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
-      transaction.recentBlockhash = blockhash;
-      transaction.feePayer = sender;
-
-      const { solana } = window as any;
-      const signed = await solana.signTransaction(transaction);
-
-      const signature = await connection.sendRawTransaction(signed.serialize());
-
-      const confirmation = await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        'confirmed'
-      );
-
-      if (confirmation.value.err) {
-        throw new Error('Transaction failed');
+      
+      if (result.success) {
+        setTipModalOpen(false);
+        addNotification({
+          type: 'success',
+          message: `Successfully sent ${result.amount} SOL tip!`,
+          txHash: result.txHash
+        });
       }
-
-      addNotification({
-        type: 'success',
-        message: `Tip of ${tipAmount} SOL sent successfully!`,
-        txHash: signature
-      });
-
-      setTipModalOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending tip:', error);
       addNotification({
         type: 'error',
-        message: 'Failed to send tip. Please try again.'
+        message: error.message || 'Failed to send tip. Please try again.'
+      });
+    }
+  };
+
+  const handleCreatePost = async () => {
+    if (!connected || !publicKey) {
+      openModal();
+      return;
+    }
+
+    try {
+      setError('');
+      const result = await createPost(newPost, publicKey, connection, ensureUserExists);
+      
+      if (result.success) {
+        setPostModalOpen(false);
+        setNewPost({
+          content: '',
+          twitter_embed: '',
+          website: '',
+          facebook: '',
+          telegram: ''
+        });
+        
+        addNotification({
+          type: 'success',
+          message: 'Post created successfully!',
+          txHash: result.txHash
+        });
+        
+        // Refresh posts to show the new one
+        fetchPosts(false);
+      }
+    } catch (error: any) {
+      console.error('Error creating post:', error);
+      addNotification({
+        type: 'error',
+        message: error.message || 'Failed to create post. Please try again.'
       });
     }
   };
@@ -148,26 +221,38 @@ const FanPage: React.FC = () => {
         onRemove={removeNotification}
       />
 
-      <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6">
-        <UserProfile 
-          connected={connected}
-          publicKey={publicKey?.toBase58() || null}
-          isSubmitting={isSubmitting}
-          onCreatePost={() => setPostModalOpen(true)}
-          onConnectWallet={openModal}
+      <GlobalActivityNotifications connected={connected} />
+
+      <div className="max-w-4xl mx-auto">
+        <NetworkBanner 
+          currentNetwork={currentNetwork}
+          onNetworkChange={handleNetworkChange}
         />
 
-        <div className="md:col-span-3">
-          <PostsList 
-            posts={posts}
-            loading={loading}
-            error={error}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <UserProfile 
             connected={connected}
-            currentUserWallet={publicKey?.toBase58() || null}
-            onEmojiReaction={handleEmojiClick}
-            onOpenComments={openCommentsModal}
-            onOpenTip={openTipModal}
+            publicKey={publicKey?.toBase58() || null}
+            isSubmitting={isSubmitting}
+            onCreatePost={() => setPostModalOpen(true)}
+            onConnectWallet={openModal}
           />
+
+          <div className="md:col-span-3">
+            <EnhancedPostsList 
+              posts={posts}
+              loading={loading}
+              loadingMore={loadingMore}
+              error={error}
+              hasMore={hasMore}
+              connected={connected}
+              currentUserWallet={publicKey?.toBase58() || null}
+              onEmojiReaction={handleEmojiClick}
+              onOpenComments={openCommentsModal}
+              onOpenTip={openTipModal}
+              onLoadMore={loadMore}
+            />
+          </div>
         </div>
       </div>
 
@@ -175,36 +260,14 @@ const FanPage: React.FC = () => {
         isOpen={isPostModalOpen}
         newPost={newPost}
         isSubmitting={isSubmitting}
-        onClose={() => setPostModalOpen(false)}
-        onPostChange={setNewPost}
-        onSubmit={async () => {
-          setIsSubmitting(true);
-          try {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate post
-            setPostModalOpen(false);
-            setNewPost({
-              content: '',
-              twitter_embed: '',
-              website: '',
-              facebook: '',
-              telegram: ''
-            });
-            fetchPosts();
-            addNotification({
-              type: 'success',
-              message: 'Post created successfully!'
-            });
-          } catch {
-            addNotification({
-              type: 'error',
-              message: 'Failed to create post. Please try again.'
-            });
-          } finally {
-            setIsSubmitting(false);
-          }
+        transactionStatus={transactionStatus}
+        error={postError}
+        onClose={() => {
+          setPostModalOpen(false);
+          setError('');
         }}
-        transactionStatus={'idle'}
-        error={''}
+        onPostChange={setNewPost}
+        onSubmit={handleCreatePost}
       />
 
       <CommentsModal
@@ -222,7 +285,13 @@ const FanPage: React.FC = () => {
         isOpen={isTipModalOpen}
         post={selectedPost}
         tipAmount={tipAmount}
-        onClose={() => setTipModalOpen(false)}
+        isSubmitting={isTipSubmitting}
+        transactionStatus={tipTransactionStatus}
+        error={tipError}
+        onClose={() => {
+          setTipModalOpen(false);
+          setTipError('');
+        }}
         onTipAmountChange={setTipAmount}
         onSendTip={handleSendTip}
       />

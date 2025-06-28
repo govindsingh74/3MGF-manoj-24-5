@@ -52,4 +52,3 @@ export interface EmojiType {
   icon: React.ElementType;
   label: string;
 }
-

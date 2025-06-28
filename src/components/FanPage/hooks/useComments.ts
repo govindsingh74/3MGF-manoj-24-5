@@ -31,12 +31,7 @@ export const useComments = () => {
         throw commentsError;
       }
 
-      setComments(
-        (commentsData || []).map((comment: any) => ({
-          ...comment,
-          users: Array.isArray(comment.users) ? comment.users[0] : comment.users
-        }))
-      );
+      setComments(commentsData || []);
     } catch (error) {
       console.error('Error in fetchComments:', error);
     }

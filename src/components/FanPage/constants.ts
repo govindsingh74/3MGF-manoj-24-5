@@ -3,8 +3,8 @@ import { EmojiType } from './types';
 
 export const PLATFORM_FEE_ADDRESS = '4n7S3NeFj2WTJVrXJdhpiCjqmWExhV7XGNDxWD5bg756';
 export const PLATFORM_FEE = 0.05; // SOL
-export const COMMENT_MAX_LENGTH = 100;
-export const POST_MAX_LENGTH = 160;
+export const COMMENT_MAX_LENGTH = 300;
+export const POST_MAX_LENGTH = 500;
 
 export const EMOJI_TYPES: EmojiType[] = [
   { type: 'thumbs_up', icon: ThumbsUp, label: 'Thumbs Up' },

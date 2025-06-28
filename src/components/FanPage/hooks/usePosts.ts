@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { Post } from '../types';
 import { useWallet } from '../../../context/WalletContext';
-import { useCallback } from 'react';
-
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -16,7 +14,7 @@ export const usePosts = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchPosts = useCallback(async () => {
+  const fetchPosts = async () => {
     try {
       setLoading(true);
       console.log('Fetching posts...');
@@ -87,7 +85,7 @@ export const usePosts = () => {
 
             if (reactionsData) {
               reactionsData.forEach(reaction => {
-                if (Object.prototype.hasOwnProperty.call(reactions, reaction.emoji_type)) {
+                if (reactions.hasOwnProperty(reaction.emoji_type)) {
                   reactions[reaction.emoji_type as keyof typeof reactions]++;
                 }
               });
@@ -119,35 +117,16 @@ export const usePosts = () => {
               console.error('Error fetching comments count:', commentsError);
             }
 
-            // Ensure users property matches Post type (users: { wallet_address: string })
-            let user: { wallet_address: string } = { wallet_address: '' };
-            if (post.users && Array.isArray(post.users) && post.users.length > 0) {
-              user = {
-                wallet_address: String(post.users[0].wallet_address ?? '')
-              };
-            }
-            
             return {
               ...post,
-              users: user,
               reactions,
               user_reactions: userReactions,
               comments_count: commentsCount || 0
             };
           } catch (error) {
             console.error('Error processing post:', post.id, error);
-
-            // Ensure users property is always present
-            let user: { wallet_address: string } = { wallet_address: '' };
-            if (post.users && Array.isArray(post.users) && post.users.length > 0) {
-              user = {
-                wallet_address: String(post.users[0].wallet_address ?? '')
-              };
-            }
-            
             return {
               ...post,
-              users: user,
               reactions: { thumbs_up: 0, smiley: 0, shit: 0, heart: 0 },
               user_reactions: [],
               comments_count: 0
@@ -163,26 +142,7 @@ export const usePosts = () => {
     } finally {
       setLoading(false);
     }
-  }, [connected, publicKey]);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('likes-updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'likes' },
-        (payload) => {
-          console.log('Realtime update:', payload);
-          fetchPosts(); // re-fetch posts when likes change
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchPosts]);
-
+  };
 
   const ensureUserExists = async (walletAddress: string): Promise<string> => {
     try {
@@ -219,69 +179,57 @@ export const usePosts = () => {
     }
   };
 
-  type EmojiType = 'thumbs_up' | 'smiley' | 'shit' | 'heart';
-  
-  const handleEmojiReaction = async (postId: string, emojiType: EmojiType) => {
+  const handleEmojiReaction = async (postId: string, emojiType: string) => {
     if (!connected || !publicKey) {
-      alert("Connect your wallet first");
-      return;
+      throw new Error('Wallet not connected');
     }
 
-    const userId = await ensureUserExists(publicKey.toString());
+    try {
+      // Get the user's UUID first
+      const userId = await ensureUserExists(publicKey.toString());
 
-    // Check if user already reacted with the same emoji
-    const { data: existing } = await supabase
-      .from('likes')
-      .select('id')
-      .eq('post_id', postId)
-      .eq('user_id', userId)
-      .eq('emoji_type', emojiType)
-      .maybeSingle();
+      // Try to insert the reaction first
+      const { error: insertError } = await supabase
+        .from('likes')
+        .insert({
+          post_id: postId,
+          user_id: userId,
+          emoji_type: emojiType
+        });
 
-    if (existing?.id) {
-      await supabase.from('likes').delete().eq('id', existing.id);
-      // Update local state: decrease count
-      setPosts(prev =>
-        prev.map(post =>
-          post.id === postId
-            ? {
-                ...post,
-                reactions: {
-                  ...post.reactions,
-                  [emojiType]: (post.reactions[emojiType] || 1) - 1,
-                },
-                user_reactions: post.user_reactions.filter(e => e !== emojiType)
-              }
-            : post
-        )
-      );
-    } else {
-      await supabase
-      .from('likes')
-      .upsert({ post_id: postId, user_id: userId, emoji_type: emojiType }, { onConflict: 'post_id,user_id,emoji_type' });
+      if (insertError) {
+        // Check if it's a unique constraint violation (duplicate reaction)
+        if (insertError.code === '23505') {
+          // Reaction already exists, so remove it (toggle off)
+          const { error: deleteError } = await supabase
+            .from('likes')
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', userId)
+            .eq('emoji_type', emojiType);
 
-      // Update local state: increase count
-      setPosts(prev =>
-        prev.map(post =>
-          post.id === postId
-            ? {
-                ...post,
-                reactions: {
-                  ...post.reactions,
-                  [emojiType]: (post.reactions[emojiType] || 0) + 1,
-                },
-                user_reactions: [...post.user_reactions, emojiType]
-              }
-            : post
-        )
-      );
+          if (deleteError) {
+            console.error('Error removing reaction:', deleteError);
+            throw deleteError;
+          }
+        } else {
+          // Some other error occurred
+          console.error('Error adding reaction:', insertError);
+          throw insertError;
+        }
+      }
+      
+      // Refresh posts to show updated reactions
+      await fetchPosts();
+    } catch (error) {
+      console.error('Error toggling reaction:', error);
+      throw error;
     }
   };
 
-
   useEffect(() => {
     fetchPosts();
-  }, [connected, publicKey, fetchPosts]);
+  }, [connected, publicKey]);
 
   return {
     posts,

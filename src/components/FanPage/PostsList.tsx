@@ -2,7 +2,6 @@ import React from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Post } from './types';
 import PostCard from './PostCard';
-import { EmojiType } from './types';
 
 interface PostsListProps {
   posts: Post[];
@@ -10,12 +9,10 @@ interface PostsListProps {
   error: string;
   connected: boolean;
   currentUserWallet: string | null;
-  onEmojiReaction: (postId: string, emojiType: EmojiType) => Promise<void>;
+  onEmojiReaction: (postId: string, emojiType: string) => void;
   onOpenComments: (post: Post) => void;
   onOpenTip: (post: Post) => void;
 }
-
-
 
 const PostsList: React.FC<PostsListProps> = ({
   posts,

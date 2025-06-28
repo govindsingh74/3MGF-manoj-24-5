@@ -23,8 +23,19 @@ const PostCard: React.FC<PostCardProps> = ({
   onOpenComments,
   onOpenTip
 }) => {
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Prevent card click when clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('a')) {
+      e.stopPropagation();
+    }
+  };
+
   return (
-    <div className="holographic p-4">
+    <div 
+      className="holographic p-4 cursor-pointer transition-all duration-200 hover:shadow-lg"
+      onClick={handleCardClick}
+    >
       <div className="flex justify-between items-start mb-3">
         <div className="font-mono text-xs text-accent-green">
           {formatWalletAddress(post.users.wallet_address)}
@@ -52,6 +63,7 @@ const PostCard: React.FC<PostCardProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
+              onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink size={12} /> Website
             </a>
@@ -62,6 +74,7 @@ const PostCard: React.FC<PostCardProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
+              onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink size={12} /> Facebook
             </a>
@@ -72,6 +85,7 @@ const PostCard: React.FC<PostCardProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
+              onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink size={12} /> Telegram
             </a>
@@ -80,14 +94,18 @@ const PostCard: React.FC<PostCardProps> = ({
       )}
 
       <div className="flex items-center justify-between pt-3 border-t border-white/10">
-        <EmojiReactions post={post} onReaction={onEmojiReaction} />
-        <PostActions
-          post={post}
-          connected={connected}
-          currentUserWallet={currentUserWallet}
-          onOpenComments={onOpenComments}
-          onOpenTip={onOpenTip}
-        />
+        <div onClick={(e) => e.stopPropagation()}>
+          <EmojiReactions post={post} onReaction={onEmojiReaction} />
+        </div>
+        <div onClick={(e) => e.stopPropagation()}>
+          <PostActions
+            post={post}
+            connected={connected}
+            currentUserWallet={currentUserWallet}
+            onOpenComments={onOpenComments}
+            onOpenTip={onOpenTip}
+          />
+        </div>
       </div>
     </div>
   );
