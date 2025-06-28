@@ -14,7 +14,7 @@ import { useComments } from '../components/fanpage/hooks/useComments';
 import { usePostCreation } from '../components/fanpage/hooks/usePostCreation';
 import { useTipTransfer } from '../components/fanpage/hooks/useTipTransfer';
 import { Post, NewPost } from '../components/fanpage/types';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'; 
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
