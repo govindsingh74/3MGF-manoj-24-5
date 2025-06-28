@@ -16,7 +16,8 @@ const WalletModal: React.FC = () => {
   };
 
   const isPhantomInstalled = () => {
-    return typeof window !== 'undefined' && !!(window as any).solana?.isPhantom;
+    if (typeof window === 'undefined') return false;
+    return !!(window as any).solana?.isPhantom;
   };
 
   return (
