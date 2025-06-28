@@ -5,11 +5,18 @@ import './index.css';
 
 // Polyfills for browser environment
 import { Buffer } from 'buffer';
-import process from 'process';
 
-// Make Buffer and process available globally
-(globalThis as typeof globalThis & { Buffer: typeof Buffer; process: typeof process }).Buffer = Buffer;
-(globalThis as typeof globalThis & { Buffer: typeof Buffer; process: typeof process }).process = process;
+// Make Buffer available globally for Solana libraries
+if (typeof window !== 'undefined') {
+  (window as any).global = window;
+  (window as any).Buffer = Buffer;
+  (window as any).process = {
+    env: {},
+    version: '',
+    platform: 'browser',
+    nextTick: (fn: () => void) => setTimeout(fn, 0),
+  };
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
